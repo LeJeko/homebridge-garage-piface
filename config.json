@@ -1,0 +1,13 @@
+{
+			"accessory": "GaragePiFace",
+			"name": "Garage",
+			"switchOutput": 0,
+			"switchPressTimeInMs": 1000,
+			"switchValue": 1,
+			"closedSensorInput": 1,
+			"closedSensorValue": 1,
+			"openSensorInput": 0,
+			"openSensorValue": 1,
+			"pollInMs": 4000,
+			"opensInSeconds": 17.5
+		}

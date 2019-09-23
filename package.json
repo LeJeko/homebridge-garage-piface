@@ -1,0 +1,26 @@
+{
+  "name": "homebridge-garage-piface",
+  "version": "0.1.2",
+  "description": "Exposes a garage door and/or a Gate accessory to HomeBridge that uses a RaspberryPi with PiGave board",
+  "main": "index.js",
+  "keywords": [
+    "homebridge-plugin",
+    "homebridge",
+	  "garage",
+    "piface"
+  ],
+  "author": "LeJeko",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LeJeko/homebridge-garage-piface.git"
+  },
+  "homepage": "https://github.com/LeJeko/homebridge-garage-piface",
+  "engines": {
+    "node": ">=0.12.0",
+    "homebridge": ">=0.2.0"
+  },
+  "dependencies": {
+    "piface": "^2.0.10"
+  }
+}
