@@ -1,4 +1,16 @@
+<p align="center">
+  <a href="https://github.com/homebridge/homebridge"><img src="https://raw.githubusercontent.com/homebridge/branding/master/logos/homebridge-color-round-stylized.png" height="140"></a>
+</p>
+
+<span align="center">
+
 # homebridge-garage-piface
+
+[![npm](https://img.shields.io/npm/v/homebridge-garage-piface.svg)](https://www.npmjs.com/package/homebridge-garage-piface) [![npm](https://img.shields.io/npm/dt/homebridge-garage-piface.svg)](https://www.npmjs.com/package/homebridge-garage-piface)
+
+</span>
+
+## Description
 Garage and/or Gate Opener plugin for [HomeBridge](https://github.com/nfarina/homebridge) for Raspberry Pi with PiFace board.
 
 This plugin is suitable for any device as a garage door or a gate motor that needs a brief contact (switch) to trigger an action as a opening or a closing.
@@ -37,20 +49,20 @@ npm -g install homebridge-garage-piface
 
 _config.json_
 
-```json
+```
 "accessories": [
-        {
-			"accessory": "GaragePiFace",
-			"name": "Garage",
-			"switchOutput": 0,
-			"switchPressTimeInMs": 1000,	// optional
-			"switchValue": 1,				// optional
-			"closedSensorInput": 0, 		// optional
-			"closedSensorValue": 1, 		// optional
-			"openSensorInput": 1,   		// optional
-			"openSensorValue": 1,   		// optional
-			"pollInMs": 4000,       		// optional
-			"opensInSeconds": 10			// optional
-		}
+	{
+	"accessory": "GaragePiFace",
+	"name": "Garage",
+	"switchOutput": 0,
+	"switchPressTimeInMs": 1000,		// optional
+	"switchValue": 1,			// optional
+	"closedSensorInput": 0, 		// optional
+	"closedSensorValue": 1, 		// optional
+	"openSensorInput": 1,   		// optional
+	"openSensorValue": 1,   		// optional
+	"pollInMs": 4000,       		// optional
+	"opensInSeconds": 10			// optional
+	}
 ]
 ```

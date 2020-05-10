@@ -1,6 +1,6 @@
 {
   "name": "homebridge-garage-piface",
-  "version": "0.1.2",
+  "version": "1.0.0",
   "description": "Exposes a garage door and/or a Gate accessory to HomeBridge that uses a RaspberryPi with PiGave board",
   "main": "index.js",
   "keywords": [
@@ -21,6 +21,6 @@
     "homebridge": ">=0.2.0"
   },
   "dependencies": {
-    "piface": "^2.0.10"
+    "piface-node-12": "^1.0.0"
   }
 }

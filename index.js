@@ -1,5 +1,5 @@
 var Service, Characteristic, DoorState // set in the module.exports, from homebridge
-var pfio = require("piface")
+var pfio = require("piface-node-12")
 pfio.init()
 
 module.exports = function(homebridge) {
