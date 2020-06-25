@@ -24,8 +24,8 @@ function GaragePiFaceAccessory(log, config) {
   this.openDoorSensorInput = config.openSensorInput
   this.sensorPollInMs = config.pollInMs || 4000
   this.doorOpensInSeconds = config.opensInSeconds || 10
-  this.closedDoorSensorValue = config.closedSensorValue  || 1
-  this.openDoorSensorValue = config.openSensorValue || 1
+  this.closedDoorSensorValue = config.closedSensorValue
+  this.openDoorSensorValue = config.openSensorValue
   log("Switch Output: " + this.doorSwitchOutput)
   log("Switch Val: " + (this.relayOn == 1 ? "ACTIVE_HIGH" : "ACTIVE_LOW"))
   log("Switch Active Time in ms: " + this.doorSwitchPressTimeInMs)
