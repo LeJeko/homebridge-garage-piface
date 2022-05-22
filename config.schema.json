@@ -1,0 +1,78 @@
+{
+    "pluginAlias": "GaragePiFace",
+    "pluginType": "accessory",
+    "singular": false,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "title": "Name",
+                "type": "string",
+                "required": true
+            },
+            "switchOutput": {
+                "title": "Switch Output",
+                "type": "integer",
+                "default": 0,
+                "required": true,
+                "description": "The PIface output to trigger."
+            },
+            "switchValue": {
+                "title": "Switch output Value",
+                "type": "integer",
+                "default": 1,
+                "required": false,
+                "description": "The value to set for the output."
+            },
+            "switchPressTimeInMs": {
+                "title": "switch Press Time In Ms",
+                "type": "number",
+                "default": 1000,
+                "required": false,
+                "description": "Time to keep output value."
+            },
+            "closedSensorInput": {
+                "title": "Closed Sensor Input",
+                "type": "integer",
+                "default": "",
+                "required": false,
+                "description": "The PIface input to check closed contact."
+            },
+            "closedSensorValue": {
+                "title": "Closed Sensor Value",
+                "type": "integer",
+                "default": 1,
+                "required": false,
+                "description": "The value of contact when closed."
+            },
+            "openSensorInput": {
+                "title": "Open Sensor Input",
+                "type": "integer",
+                "default": "",
+                "required": false,
+                "description": "The PIface input to check open contact."
+            },
+            "openSensorValue": {
+                "title": "Open Sensor Value",
+                "type": "integer",
+                "default": 1,
+                "required": false,
+                "description": "The value of contact when open."
+            },
+            "pollInMs": {
+                "title": "Poll In Ms",
+                "type": "number",
+                "default": 4000,
+                "required": false,
+                "description": "Time to pool status."
+            },
+            "opensInSeconds": {
+                "title": "Opens In Seconds",
+                "type": "number",
+                "default": 5,
+                "required": false,
+                "description": "The time to open/close the door."
+            }
+        }
+    }
+}

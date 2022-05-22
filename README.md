@@ -10,6 +10,11 @@
 
 </span>
 
+## Breaking Note
+From version 2.x the plugin uses the node-pifacedigital dependency instead of piface-node-12.
+
+Please install new necessary libraries as explained below.
+
 ## Description
 Garage and/or Gate Opener plugin for [HomeBridge](https://github.com/nfarina/homebridge) for Raspberry Pi with PiFace board.
 
@@ -17,34 +22,39 @@ This plugin is suitable for any device as a garage door or a gate motor that nee
 
 This fork is adapted from [homebridge-garage-gate-opener](https://github.com/MForge/homebridge-garage-gate-opener) by [MForge.org](https://www.mforge.org/fr/2017/11/08/homebridge-controle-de-porte-de-garage-etou-de-portail-home-de-apple/)
 
-## Requirement
-
-Before installing this plug-in, you need:
-
-* Download, build and install the C libraries:
-
-```bash
-sudo apt-get install automake libtool git
-git clone https://github.com/thomasmacpherson/piface.git
-cd piface/c
-./autogen.sh && ./configure && make && sudo make install
-sudo ldconfig
-cd ../scripts
-sudo ./spidev-setup
-```
-
-* Activate SPI
-
-```bash
-sudo raspi-config
--> Interfacing Options -> Enable SPI
-```
-
 ## Installation
 
-```bash
-npm -g install homebridge-garage-piface
+On a fresh installation you should enable SPI.
+
+Therefore start `raspi-config` -> `Interface Options` -> `SPI` -> `Yes`.
+
+Reboot the RPi.
+
+#### Install necessary libraries
+
 ```
+git clone https://github.com/piface/libmcp23s17.git
+cd libmcp23s17/
+make
+sudo make install
+cd ..
+```
+
+```
+git clone https://github.com/piface/libpifacedigital.git
+cd libpifacedigital/
+make
+sudo make install
+cd ..
+```
+
+#### Install the plugin
+Use Homebridge web UI
+or
+```
+hb-service add homebrige-garage-piface
+```
+
 ## Configuration
 
 _config.json_

@@ -4,9 +4,9 @@
 			"switchOutput": 0,
 			"switchPressTimeInMs": 1000,
 			"switchValue": 1,
-			"closedSensorInput": 1,
+			"closedSensorInput": "",
 			"closedSensorValue": 1,
-			"openSensorInput": 0,
+			"openSensorInput": "",
 			"openSensorValue": 1,
 			"pollInMs": 4000,
 			"opensInSeconds": 17.5
