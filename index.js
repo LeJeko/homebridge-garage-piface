@@ -1,227 +1,280 @@
-var Service, Characteristic, DoorState // set in the module.exports, from homebridge
+'use strict';
 
-var PIFD = require('node-pifacedigital');
-var pi = new PIFD.PIFaceDigital(0,false);
+const PLUGIN_NAME = 'homebridge-garage-piface';
+const PLATFORM_NAME = 'GaragePiFace';
 
-module.exports = function(homebridge) {
-  Service = homebridge.hap.Service
-  Characteristic = homebridge.hap.Characteristic
-  DoorState = homebridge.hap.Characteristic.CurrentDoorState
-
-  homebridge.registerAccessory("homebridge-garage-piface", "GaragePiFace", GaragePiFaceAccessory)
+let PIFD;
+try {
+  PIFD = require('node-pifacedigital');
+} catch (e) {
+  // Handled at platform init with a clear error message
 }
 
-function GaragePiFaceAccessory(log, config) {
-  this.log = log
-  this.version = require('./package.json').version
-  log("GaragePiFaceAccessory version " + this.version)
+module.exports = (api) => {
+  api.registerPlatform(PLATFORM_NAME, GaragePiFacePlatform);
+};
 
-  this.name = config.name
-  this.doorSwitchOutput = config.switchOutput
-  this.relayOn = config.switchValue || 1
-  this.relayOff = 1-this.relayOn //opposite of relayOn (O/1)
-  this.doorSwitchPressTimeInMs = config.switchPressTimeInMs || 1000
-  this.closedDoorSensorInput = config.closedSensorInput
-  this.openDoorSensorInput = config.openSensorInput
-  this.sensorPollInMs = config.pollInMs || 4000
-  this.doorOpensInSeconds = config.opensInSeconds || 10
-  this.closedDoorSensorValue = config.closedSensorValue
-  this.openDoorSensorValue = config.openSensorValue
-  log("Switch Output: " + this.doorSwitchOutput)
-  log("Switch Val: " + (this.relayOn == 1 ? "ACTIVE_HIGH" : "ACTIVE_LOW"))
-  log("Switch Active Time in ms: " + this.doorSwitchPressTimeInMs)
+class GaragePiFacePlatform {
+  constructor(log, config, api) {
+    this.log = log;
+    this.config = config;
+    this.api = api;
+    this.cachedAccessories = new Map();
 
-  if (this.hasClosedSensor()) {
-      log("Closed Sensor: Configured")
-      log("    Closed Sensor Input: " + this.closedDoorSensorInput)
-      log("    Closed Sensor Val: " + (this.closedDoorSensorValue == 1 ? "ACTIVE_HIGH" : "ACTIVE_LOW"))
-  } else {
-      log("Closed Sensor: Not Configured")
+    if (!PIFD) {
+      this.log.error('node-pifacedigital could not be loaded. Run: sudo apt-get install libpifacedigital-dev && npm rebuild node-pifacedigital');
+      return;
+    }
+
+    try {
+      this.pi = new PIFD.PIFaceDigital(0, false);
+    } catch (e) {
+      this.log.error('Failed to initialize PiFace Digital board: ' + e.message);
+      return;
+    }
+
+    this.api.on('didFinishLaunching', () => {
+      this.discoverDevices();
+    });
   }
 
-  if(this.hasOpenSensor()) {
-      log("Open Sensor: Configured")
-      log("    Open Sensor Input: " + this.openDoorSensorInput)
-      log("    Open Sensor Val: " + (this.openDoorSensorValue == 1 ? "ACTIVE_HIGH" : "ACTIVE_LOW"))
-  } else {
-      log("Open Sensor: Not Configured")
+  configureAccessory(accessory) {
+    this.cachedAccessories.set(accessory.UUID, accessory);
   }
 
-  if (!this.hasClosedSensor() && !this.hasOpenSensor()) {
-      this.wasClosed = true //Set a valid initial state
-      log("NOTE: Neither Open nor Closed sensor is configured. Will be unable to determine what state the garage is in, and will rely on last known state.")
+  discoverDevices() {
+    if (!this.pi) return;
+
+    const devices = this.config.accessories || [];
+    const configuredUUIDs = new Set();
+
+    for (const deviceConfig of devices) {
+      const uuid = this.api.hap.uuid.generate(`${PLUGIN_NAME}:${deviceConfig.name}`);
+      configuredUUIDs.add(uuid);
+
+      let accessory = this.cachedAccessories.get(uuid);
+      if (!accessory) {
+        this.log.info(`Adding new accessory: ${deviceConfig.name}`);
+        accessory = new this.api.platformAccessory(deviceConfig.name, uuid);
+        new GaragePiFaceHandler(this.log, deviceConfig, this.api, accessory, this.pi);
+        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+        this.cachedAccessories.set(uuid, accessory);
+      } else {
+        this.log.info(`Restoring cached accessory: ${deviceConfig.name}`);
+        new GaragePiFaceHandler(this.log, deviceConfig, this.api, accessory, this.pi);
+      }
+    }
+
+    // Remove accessories no longer in config
+    for (const [uuid, accessory] of this.cachedAccessories) {
+      if (!configuredUUIDs.has(uuid)) {
+        this.log.info(`Removing accessory: ${accessory.displayName}`);
+        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+        this.cachedAccessories.delete(uuid);
+      }
+    }
   }
-  log("Sensor Poll in ms: " + this.sensorPollInMs)
-  log("Opens in seconds: " + this.doorOpensInSeconds)
-  this.initService()
 }
 
-GaragePiFaceAccessory.prototype = {
+class GaragePiFaceHandler {
+  constructor(log, config, api, accessory, pi) {
+    this.log = log;
+    this.api = api;
+    this.accessory = accessory;
+    this.pi = pi;
 
-  determineCurrentDoorState: function() {
-       if (this.isClosed()) {
-         return DoorState.CLOSED
-       } else if (this.hasOpenSensor()) {
-         return this.isOpen() ? DoorState.OPEN : DoorState.STOPPED 
-       } else {
-         return DoorState.OPEN
-       }
-  },
-  
-  doorStateToString: function(state) {
-    switch (state) {
-      case DoorState.OPEN:
-        return "OPEN"
-      case DoorState.CLOSED:
-        return "CLOSED"
-      case DoorState.STOPPED:
-        return "STOPPED"
-      default:
-        return "UNKNOWN"
-    }
-  },
+    const { Characteristic } = this.api.hap;
+    this.DoorState = Characteristic.CurrentDoorState;
 
-  monitorDoorState: function() {
-     var isClosed = this.isClosed()
-     var isOpen = this.isOpen()
-     if (isClosed != this.wasClosed) {
-       var state = this.determineCurrentDoorState()
-       if (!this.operating) {
-         this.log("State changed to " + this.doorStateToString(state))
-         this.wasClosed = isClosed
-         this.currentDoorState.setValue(state)
-         this.targetState = state
-       }
-     }
-     setTimeout(this.monitorDoorState.bind(this), this.sensorPollInMs)
-  },
+    this.version = require('./package.json').version;
+    this.name = config.name;
+    this.doorSwitchOutput = config.switchOutput;
+    this.relayOn = config.switchValue !== undefined ? config.switchValue : 1;
+    this.relayOff = 1 - this.relayOn;
+    this.doorSwitchPressTimeInMs = config.switchPressTimeInMs || 1000;
+    this.closedDoorSensorInput = config.closedSensorInput || null;
+    this.openDoorSensorInput = config.openSensorInput || null;
+    this.sensorPollInMs = config.pollInMs || 4000;
+    this.doorOpensInSeconds = config.opensInSeconds || 10;
+    this.closedDoorSensorValue = config.closedSensorValue;
+    this.openDoorSensorValue = config.openSensorValue;
 
-  hasOpenSensor: function() {
-    return this.openDoorSensorInput != null
-  },
+    log.info(`GaragePiFaceAccessory v${this.version}`);
+    log.info(`Switch Output: ${this.doorSwitchOutput} (${this.relayOn === 1 ? 'ACTIVE_HIGH' : 'ACTIVE_LOW'}), Press: ${this.doorSwitchPressTimeInMs}ms`);
 
-  hasClosedSensor: function() {
-    return this.closedDoorSensorInput != null
-  },
-
-  initService: function() {
-    this.garageDoorOpener = new Service.GarageDoorOpener(this.name,this.name)
-    this.currentDoorState = this.garageDoorOpener.getCharacteristic(DoorState)
-    this.currentDoorState.on('get', this.getState.bind(this))
-    this.targetDoorState = this.garageDoorOpener.getCharacteristic(Characteristic.TargetDoorState)
-    this.targetDoorState.on('set', this.setState.bind(this))
-    this.targetDoorState.on('get', this.getTargetState.bind(this))
-    var isClosed = this.isClosed()
-
-    this.wasClosed = isClosed
-    this.operating = false
-    this.infoService = new Service.AccessoryInformation()
-    this.infoService
-      .setCharacteristic(Characteristic.Manufacturer, "Opensource Community")
-      .setCharacteristic(Characteristic.Model, "RaspPi PiFace GarageDoor")
-      .setCharacteristic(Characteristic.SerialNumber, this.version)
-  
-    if (this.hasOpenSensor() || this.hasClosedSensor()) {
-        this.log(this.name + " have a sensor, monitoring state enabled.")
-        setTimeout(this.monitorDoorState.bind(this), this.sensorPollInMs)
-    }
-
-    this.log("Initial State: " + (isClosed ? "CLOSED" : "OPEN"))
-    this.currentDoorState.setValue(isClosed ? DoorState.CLOSED : DoorState.OPEN)
-    this.targetDoorState.setValue(isClosed ? DoorState.CLOSED : DoorState.OPEN)
-  },
-
-  getTargetState: function(callback) {
-    callback(null, this.targetState)
-  },
-
-  readPin: function(pin) {
-    return pi.get(pin)
-   },
-
-  writePin: function(pin,val) {
-    pi.set(pin,val)
-  },
-
-  isClosed: function() {
     if (this.hasClosedSensor()) {
-        return this.readPin(this.closedDoorSensorInput) == this.closedDoorSensorValue
-    } else if (this.hasOpenSensor()) {
-        return !this.isOpen()
+      log.info(`Closed Sensor: input=${this.closedDoorSensorInput}, val=${this.closedDoorSensorValue === 1 ? 'ACTIVE_HIGH' : 'ACTIVE_LOW'}`);
     } else {
-        return this.wasClosed
+      log.info('Closed Sensor: Not Configured');
     }
-  },
 
-  isOpen: function() {
     if (this.hasOpenSensor()) {
-        return this.readPin(this.openDoorSensorInput) == this.openDoorSensorValue
-    } else if (this.hasClosedSensor()) {
-        return !this.isClosed()
+      log.info(`Open Sensor: input=${this.openDoorSensorInput}, val=${this.openDoorSensorValue === 1 ? 'ACTIVE_HIGH' : 'ACTIVE_LOW'}`);
     } else {
-        return !this.wasClosed
+      log.info('Open Sensor: Not Configured');
     }
-  },
 
-  switchOn: function() {
-    this.writePin(this.doorSwitchOutput, this.relayOn)
-    this.log("Turning on " + this.name + " (Relay " + this.doorSwitchOutput + ") = " + this.relayOn)
-    setTimeout(this.switchOff.bind(this), this.doorSwitchPressTimeInMs)
-  },
-
-  switchOff: function() {
-    this.writePin(this.doorSwitchOutput, this.relayOff)
-    this.log("Turning off " + this.name + " (Relay " + this.doorSwitchOutput + ") = " + this.relayOff)
-  },
-
-  setFinalDoorState: function() {
     if (!this.hasClosedSensor() && !this.hasOpenSensor()) {
-      var isClosed = !this.isClosed()
-      var isOpen = this.isClosed()
+      this.wasClosed = true;
+      log.warn('Neither sensor configured – relying on last known state.');
+    }
+
+    log.info(`Poll: ${this.sensorPollInMs}ms, Opens in: ${this.doorOpensInSeconds}s`);
+
+    this.initService();
+  }
+
+  hasClosedSensor() {
+    return this.closedDoorSensorInput !== null && this.closedDoorSensorInput !== '';
+  }
+
+  hasOpenSensor() {
+    return this.openDoorSensorInput !== null && this.openDoorSensorInput !== '';
+  }
+
+  initService() {
+    const { Characteristic, Service } = this.api.hap;
+    const DoorState = this.DoorState;
+
+    this.accessory.getService(Service.AccessoryInformation)
+      .setCharacteristic(Characteristic.Manufacturer, 'Opensource Community')
+      .setCharacteristic(Characteristic.Model, 'RaspPi PiFace GarageDoor')
+      .setCharacteristic(Characteristic.SerialNumber, this.version)
+      .setCharacteristic(Characteristic.FirmwareRevision, this.version);
+
+    this.garageDoorService = this.accessory.getService(Service.GarageDoorOpener)
+      || this.accessory.addService(Service.GarageDoorOpener, this.name);
+
+    this.currentDoorState = this.garageDoorService.getCharacteristic(DoorState);
+    this.currentDoorState.onGet(this.getState.bind(this));
+
+    this.targetDoorState = this.garageDoorService.getCharacteristic(Characteristic.TargetDoorState);
+    this.targetDoorState.onGet(this.getTargetState.bind(this));
+    this.targetDoorState.onSet(this.setState.bind(this));
+
+    const isClosed = this.isClosed();
+    this.wasClosed = isClosed;
+    this.operating = false;
+    this.targetState = isClosed ? DoorState.CLOSED : DoorState.OPEN;
+
+    this.currentDoorState.updateValue(isClosed ? DoorState.CLOSED : DoorState.OPEN);
+    this.targetDoorState.updateValue(this.targetState);
+    this.log.info(`Initial State: ${isClosed ? 'CLOSED' : 'OPEN'}`);
+
+    if (this.hasOpenSensor() || this.hasClosedSensor()) {
+      this.log.info(`${this.name}: sensor monitoring enabled.`);
+      setTimeout(this.monitorDoorState.bind(this), this.sensorPollInMs);
+    }
+  }
+
+  determineCurrentDoorState() {
+    const DoorState = this.DoorState;
+    if (this.isClosed()) return DoorState.CLOSED;
+    if (this.hasOpenSensor()) return this.isOpen() ? DoorState.OPEN : DoorState.STOPPED;
+    return DoorState.OPEN;
+  }
+
+  doorStateToString(state) {
+    const DoorState = this.DoorState;
+    switch (state) {
+      case DoorState.OPEN: return 'OPEN';
+      case DoorState.CLOSED: return 'CLOSED';
+      case DoorState.STOPPED: return 'STOPPED';
+      default: return 'UNKNOWN';
+    }
+  }
+
+  monitorDoorState() {
+    const isClosed = this.isClosed();
+    if (isClosed !== this.wasClosed && !this.operating) {
+      const state = this.determineCurrentDoorState();
+      this.log.info(`State changed to ${this.doorStateToString(state)}`);
+      this.wasClosed = isClosed;
+      this.currentDoorState.updateValue(state);
+      this.targetState = state;
+    }
+    setTimeout(this.monitorDoorState.bind(this), this.sensorPollInMs);
+  }
+
+  readPin(pin) {
+    return this.pi.get(pin);
+  }
+
+  writePin(pin, val) {
+    this.pi.set(pin, val);
+  }
+
+  isClosed() {
+    if (this.hasClosedSensor()) {
+      return this.readPin(this.closedDoorSensorInput) === this.closedDoorSensorValue;
+    }
+    if (this.hasOpenSensor()) return !this.isOpen();
+    return this.wasClosed;
+  }
+
+  isOpen() {
+    if (this.hasOpenSensor()) {
+      return this.readPin(this.openDoorSensorInput) === this.openDoorSensorValue;
+    }
+    if (this.hasClosedSensor()) return !this.isClosed();
+    return !this.wasClosed;
+  }
+
+  switchOn() {
+    this.writePin(this.doorSwitchOutput, this.relayOn);
+    this.log.info(`Relay ON: ${this.name} output=${this.doorSwitchOutput} val=${this.relayOn}`);
+    setTimeout(this.switchOff.bind(this), this.doorSwitchPressTimeInMs);
+  }
+
+  switchOff() {
+    this.writePin(this.doorSwitchOutput, this.relayOff);
+    this.log.info(`Relay OFF: ${this.name} output=${this.doorSwitchOutput} val=${this.relayOff}`);
+  }
+
+  setFinalDoorState() {
+    const DoorState = this.DoorState;
+    let isClosed, isOpen;
+    if (!this.hasClosedSensor() && !this.hasOpenSensor()) {
+      isClosed = !this.isClosed();
+      isOpen = this.isClosed();
     } else {
-      var isClosed = this.isClosed()
-      var isOpen = this.isOpen()
+      isClosed = this.isClosed();
+      isOpen = this.isOpen();
     }
-    if ( (this.targetState == DoorState.CLOSED && !isClosed) || (this.targetState == DoorState.OPEN && !isOpen) ) {
-      this.log("Was trying to " + (this.targetState == DoorState.CLOSED ? "CLOSE" : "OPEN") + " " + this.name + " , but it is still " + (isClosed ? "CLOSED":"OPEN"))
-      this.currentDoorState.setValue(DoorState.STOPPED)
+    if ((this.targetState === DoorState.CLOSED && !isClosed) || (this.targetState === DoorState.OPEN && !isOpen)) {
+      this.log.warn(`Tried to ${this.targetState === DoorState.CLOSED ? 'CLOSE' : 'OPEN'} ${this.name} but door did not reach target state.`);
+      this.currentDoorState.updateValue(DoorState.STOPPED);
     } else {
-      this.log("Set current state to " + (this.targetState == DoorState.CLOSED ? "CLOSED" : "OPEN"))
-      this.wasClosed = this.targetState == DoorState.CLOSED
-      this.currentDoorState.setValue(this.targetState)
+      this.log.info(`Final state: ${this.targetState === DoorState.CLOSED ? 'CLOSED' : 'OPEN'}`);
+      this.wasClosed = this.targetState === DoorState.CLOSED;
+      this.currentDoorState.updateValue(this.targetState);
     }
-    this.operating = false
-  },
+    this.operating = false;
+  }
 
-  setState: function(state, callback) {
-    this.log("Setting state to " + state)
-    this.targetState = state
-    var isClosed = this.isClosed()
-    if ((state == DoorState.OPEN && isClosed) || (state == DoorState.CLOSED && !isClosed)) {
-        this.log("Triggering Relay")
-        this.operating = true
-        if (state == DoorState.OPEN) {
-            this.currentDoorState.setValue(DoorState.OPENING)
-        } else {
-            this.currentDoorState.setValue(DoorState.CLOSING)
-        }
-	setTimeout(this.setFinalDoorState.bind(this), this.doorOpensInSeconds * 1000)
-	this.switchOn()
+  async getTargetState() {
+    return this.targetState;
+  }
+
+  async setState(state) {
+    const DoorState = this.DoorState;
+    this.log.info(`Target state: ${this.doorStateToString(state)}`);
+    this.targetState = state;
+    const isClosed = this.isClosed();
+    if ((state === DoorState.OPEN && isClosed) || (state === DoorState.CLOSED && !isClosed)) {
+      this.operating = true;
+      this.currentDoorState.updateValue(state === DoorState.OPEN ? DoorState.OPENING : DoorState.CLOSING);
+      setTimeout(this.setFinalDoorState.bind(this), this.doorOpensInSeconds * 1000);
+      this.switchOn();
     }
+  }
 
-    callback()
-    return true
-  },
-
-  getState: function(callback) {
-    var isClosed = this.isClosed()
-    var isOpen = this.isOpen()
-    var state = isClosed ? DoorState.CLOSED : isOpen ? DoorState.OPEN : DoorState.STOPPED
-    this.log(this.name + (isClosed ? " is CLOSED ("+DoorState.CLOSED+")" : isOpen ? " is OPEN ("+DoorState.OPEN+")" : " is STOPPED (" + DoorState.STOPPED + ")")) 
-    callback(null, state)
-  },
-
-  getServices: function() {
-    return [this.infoService, this.garageDoorOpener]
+  async getState() {
+    const DoorState = this.DoorState;
+    const isClosed = this.isClosed();
+    const isOpen = this.isOpen();
+    const state = isClosed ? DoorState.CLOSED : isOpen ? DoorState.OPEN : DoorState.STOPPED;
+    this.log.info(`${this.name}: ${this.doorStateToString(state)}`);
+    return state;
   }
 }
